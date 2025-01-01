@@ -23,7 +23,9 @@ Additionally, GPIO15, GPIO18, and GPIO19 are broken out in a header at the botto
 In the integration folder, a .js file is provided to serve as an example external converter for Zigbee2MQTT.
 
 # Tutorials
-Here are a couple brief tutorials for flashing the ESP_Stickbee with example firmware and integrating the device into Home Assistant. Hopefully soon I will have some videos detailing this process.
+Here are a couple brief tutorials for flashing the ESP_Stickbee with example firmware and integrating the device into Home Assistant. Hopefully soon I will have some videos detailing this process. You can follow these tutorials in video format with the following video:
+### YouTube Tutorial:
+[![ESP_Stickbee tutorial video](https://img.youtube.com/vi/InwD4ZVpsRw/0.jpg)](https://www.youtube.com/watch?v=InwD4ZVpsRw)
 
 ## Flashing firmware
 First, download three .bin files from build directory in firmware folder: bootloader.bin, partition-table.bin, ESP_Stickbee.bin.

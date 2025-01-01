@@ -139,12 +139,6 @@ void pir_sensor_update(void *arg) {
         // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
         ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((zb_occupancy? 1ULL : 0) << BUTT0_GPIO), zb_occupancy? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH));
 
-        //ESP_ERROR_CHECK(gpio_wakeup_disable(PIR_GPIO));
-        //ESP_ERROR_CHECK(esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO));
-        //ESP_ERROR_CHECK(gpio_wakeup_enable(PIR_GPIO, PIR_interrupt_type));   
-        //ESP_ERROR_CHECK(gpio_wakeup_enable(BUTT0_GPIO, BUTT0_interrupt_type));    // Make sure BUTT0 wakeup stays enabled
-        //ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
-
         // If Zigbee has started, update the attribute
         if (zb_started_flag == 1) {
             esp_zb_lock_acquire(portMAX_DELAY);
@@ -512,54 +506,10 @@ static void update_all_sensors(void *arg) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 // Configure HDC1080 and start multisense sampling loop
+// DEPRECATED, I2C IS INITIALIZED AND DEINITIALIZED EVERY LOOP
 ///////////////////////////////////////////////////////////////////////////////////////////
 static esp_err_t multisensor_init(void)
 {
-    /*
-    gpio_reset_pin(I2C_SCL);
-    gpio_reset_pin(I2C_SDA);
-
-    //i2c_master_bus_rm_device(hdc1080_dev_handle);  // Should be redundant if deleting the bus
-    //i2c_master_bus_rm_device(opt3001_dev_handle);  // Should be redundant if deleting the bus
-    //i2c_del_master_bus(i2c_bus_handle);
-
-
-    // Initialize I2C bus
-    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config, &i2c_bus_handle));
-    
-    // Reset bus to avoid errors
-    //ESP_ERROR_CHECK(i2c_master_bus_reset(i2c_bus_handle));
-        
-    // Add HDC1080 to I2C bus driver
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &hdc1080_dev_cfg, &hdc1080_dev_handle));
-
-    // Configure HDC1080 settings
-    hdc1080_settings.device_handle = hdc1080_dev_handle;
-    hdc1080_settings.configuration = HDC1080_CONFIG_TEMP_14BIT_RES_MASK | HDC1080_CONFIG_HUMIDITY_14BIT_RES_MASK | 
-                                     HDC1080_CONFIG_HEATER_DISABLE_MASK | HDC1080_CONFIG_TEMP_AND_HUMIDITY_MODE_MASK;
-        
-    // Config HDC1080
-    ESP_ERROR_CHECK(HDC1080_Write_Configuration(&hdc1080_settings));
-
-    // Add OPT3001 to I2C bus driver
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &opt3001_dev_cfg, &opt3001_dev_handle));
-
-    // Configure OPT3001 settings
-    opt3001_settings.device_handle = opt3001_dev_handle;
-    opt3001_settings.configuration = OPT3001_CONFIG_AUTO_FULLSCALE_RANGE_MASK | OPT3001_CONFIG_CONVERSION_TIME_100MS_MASK | 
-                                     OPT3001_CONFIG_CONV_MODE_SINGLESHOT_MASK | OPT3001_CONFIG_LATCH_LATCHED_MASK;
-        
-    // Config OPT3001
-    ESP_ERROR_CHECK(OPT3001_Write_Configuration(&opt3001_settings));
-
-    // Disable I2C bus (needed for light sleep)
-    //ESP_ERROR_CHECK(i2c_master_bus_rm_device(hdc1080_dev_handle));  // Should be redundant if deleting the bus
-    //ESP_ERROR_CHECK(i2c_master_bus_rm_device(opt3001_dev_handle));  // Should be redundant if deleting the bus
-    ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
-    gpio_reset_pin(I2C_SCL);
-    gpio_reset_pin(I2C_SDA);
-    */
-    
     return (xTaskCreate(update_all_sensors, "update_all_sensors", 8192, NULL, 10, NULL) == pdTRUE) ? ESP_OK : ESP_FAIL;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -617,24 +567,19 @@ static esp_err_t gpio_init(void) {
     ESP_RETURN_ON_ERROR(gpio_config(&ledp_io_conf), TAG, "Failed to configure PIR LED GPIO");
     ESP_RETURN_ON_ERROR(gpio_config(&bat_adc_en_io_conf), TAG, "Failed to configure BAT ADC enable GPIO");
     ESP_RETURN_ON_ERROR(gpio_config(&butt0_io_conf), TAG, "Failed to configure BUTT0 GPIO");
-    //ESP_RETURN_ON_ERROR(gpio_sleep_set_direction(PIR_GPIO, GPIO_MODE_INPUT), TAG, "Failed to set sleep direction of PIR IO");
-    //ESP_RETURN_ON_ERROR(gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT), TAG, "Failed to install GPIO ISR service");
+
     // Do this to avoid race conditions on boot from PIR GPIO
     uint8_t pir_level = gpio_get_level(PIR_GPIO);
     PIR_interrupt_type = pir_level? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
     ESP_RETURN_ON_ERROR(gpio_set_intr_type(PIR_GPIO, PIR_interrupt_type), TAG, "Failed to set PIR interrupt type");
     ESP_RETURN_ON_ERROR(gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT), TAG, "Failed to install ISR service");
     ESP_RETURN_ON_ERROR(gpio_isr_handler_add(PIR_GPIO, gpio_isr_handler, (void*) PIR_GPIO), TAG, "Failed to initialize PIR pin interrupt");
-    //ESP_ERROR_CHECK(gpio_wakeup_enable(PIR_GPIO, PIR_interrupt_type));    
-
-    //ESP_RETURN_ON_ERROR(gpio_sleep_set_direction(BUTT0_GPIO, GPIO_MODE_INPUT), TAG, "Failed to set sleep direction of BUTT0 IO");
+    
     // Do this to avoid race conditions on boot from BUTT0 GPIO
     BUTT0_interrupt_type = gpio_get_level(BUTT0_GPIO)? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
     ESP_RETURN_ON_ERROR(gpio_set_intr_type(BUTT0_GPIO, BUTT0_interrupt_type), TAG, "Failed to set BUTT0 interrupt type");
-    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO), TAG, "Failed to initialize BUTT0 pin interrupt");
-    //ESP_ERROR_CHECK(gpio_wakeup_enable(BUTT0_GPIO, BUTT0_interrupt_type));    
+    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO), TAG, "Failed to initialize BUTT0 pin interrupt");  
 
-    //ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
     // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
     ESP_RETURN_ON_ERROR(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((pir_level? 1ULL : 0) << BUTT0_GPIO), pir_level? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH), TAG, "Failed to enable EXT1 wakeup");
     gpio_isr_evt_queue = xQueueCreate(10, sizeof(uint32_t));
@@ -651,7 +596,6 @@ static esp_err_t gpio_init(void) {
 ///////////////////////////////////////////////////////////////////////////////////////////
 static esp_err_t init_all_drivers(void)
 {
-    //ESP_RETURN_ON_ERROR(adc_init(), TAG, "Failed to initialize ADC");
     ESP_RETURN_ON_ERROR(gpio_init(), TAG, "Failed to set up GPIO and interrupt");
     ESP_RETURN_ON_ERROR(multisensor_init(), TAG, "Failed to initialize DHT driver");
     return ESP_OK;
