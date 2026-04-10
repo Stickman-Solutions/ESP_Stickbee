@@ -19,9 +19,11 @@ const customExtend = {
   electricalCluster: () => deviceAddCustomCluster(
     'fieldUnitElectrical',
     {
+      name: 'fieldUnitElectrical',
       ID: 0xFC69,
       attributes: {
         measuredBattery: {
+          name: 'measuredBattery',
           ID: 0x0020,
           type: Zcl.DataType.INT16,
           manufacturerCode: Zcl.ManufacturerCode.RESERVED_10,   // Make sure this matches with nordic cluster definition
