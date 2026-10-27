@@ -3,6 +3,8 @@ idf_component_register(
         "main.c"
         "periph_funcs.c"
         "../zigbee/zigbee_funcs.c"
+        "../boards/bsp_common.c"
+        "../boards/esp_stickbee_rev1-0.c"
     INCLUDE_DIRS
         "."
         "../zigbee"

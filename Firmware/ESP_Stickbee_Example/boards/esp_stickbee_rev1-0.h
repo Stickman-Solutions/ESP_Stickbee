@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdbool.h>
+
+
 // GPIO assignments
 #define PIR_GPIO            GPIO_NUM_3
 #define LEDP_GPIO           GPIO_NUM_23
@@ -22,3 +25,9 @@
 #define BAT_ADC_CH          ADC_CHANNEL_2   // GPIO 2
 #define BAT_ADC_ATTEN       ADC_ATTEN_DB_0  // No attenuation needed if using AA battery and 1/2 voltage divider
 #define ADC_DELAY_MS        0               // Might be needed if using cap on ADC pin
+
+
+bool init_i2c_sensors();
+bool deinit_i2c_sensors();
+bool hdc1080_read_temperature_and_humidity(float *temperature_out, float *humidity_out);
+bool opt3001_read_illuminance(float *illuminance_out);

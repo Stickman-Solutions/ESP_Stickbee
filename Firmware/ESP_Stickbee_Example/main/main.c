@@ -1,8 +1,7 @@
 #include "zigbee_funcs.h"
 #include "periph_funcs.h"
-#include "hdc1080.h"
-#include "opt3001.h"
-#include "esp_stickbee_rev1-0.h"
+
+#include "bsp_common.h"
 
 #include "esp_pm.h"
 #include "esp_check.h"
@@ -42,38 +41,6 @@ adc_oneshot_chan_cfg_t bat_adc_config = {
     .atten = BAT_ADC_ATTEN,
 };
 adc_cali_handle_t bat_adc_cali_handle = NULL;
-///////////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////////
-// I2C variables
-///////////////////////////////////////////////////////////////////////////////////////////
-i2c_master_bus_config_t i2c_bus_config = {
-    .clk_source = I2C_CLK_SRC_DEFAULT,
-    .i2c_port = I2C_PORT,
-    .scl_io_num = I2C_SCL,
-    .sda_io_num = I2C_SDA,
-    .glitch_ignore_cnt = 7,
-    .flags.enable_internal_pullup = true,
-};
-i2c_master_bus_handle_t i2c_bus_handle;
-
-i2c_master_dev_handle_t hdc1080_dev_handle;
-hdc1080_settings_t hdc1080_settings;
-i2c_device_config_t hdc1080_dev_cfg = {
-    .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-    .device_address = HDC1080_ADDR,
-    .scl_speed_hz = 100000,
-    .flags.disable_ack_check = true,
-};
-
-i2c_master_dev_handle_t opt3001_dev_handle;
-opt3001_settings_t opt3001_settings;
-i2c_device_config_t opt3001_dev_cfg = {
-    .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-    .device_address = OPT3001_ADDR,
-    .scl_speed_hz = 100000,
-    .flags.disable_ack_check = true,
-};
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -312,27 +279,10 @@ static void update_all_sensors(void *arg) {
         esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_light_sleep", &pm_lock);
         esp_pm_lock_acquire(pm_lock);
 
-        // Reset I2C bus pins
-        gpio_reset_pin(I2C_SCL);
-        gpio_reset_pin(I2C_SDA);
+        init_i2c_sensors();
 
-        // Initialize I2C bus
-        i2c_new_master_bus(&i2c_bus_config, &i2c_bus_handle);
-
-        // Add HDC1080 to I2C bus driver
-        i2c_master_bus_add_device(i2c_bus_handle, &hdc1080_dev_cfg, &hdc1080_dev_handle);
-        hdc1080_settings.device_handle = hdc1080_dev_handle;    // Update device handle
-        hdc1080_settings.configuration = HDC1080_CONFIG_TEMP_14BIT_RES_MASK | HDC1080_CONFIG_HUMIDITY_14BIT_RES_MASK | 
-                                         HDC1080_CONFIG_HEATER_DISABLE_MASK | HDC1080_CONFIG_TEMP_AND_HUMIDITY_MODE_MASK;
-        // Add OPT3001 to I2C bus driver
-        i2c_master_bus_add_device(i2c_bus_handle, &opt3001_dev_cfg, &opt3001_dev_handle);
-        opt3001_settings.device_handle = opt3001_dev_handle;    // Update device handle
-        opt3001_settings.configuration = OPT3001_CONFIG_AUTO_FULLSCALE_RANGE_MASK | OPT3001_CONFIG_CONVERSION_TIME_100MS_MASK | 
-                                         OPT3001_CONFIG_CONV_MODE_SINGLESHOT_MASK | OPT3001_CONFIG_LATCH_LATCHED_MASK;
-        
-        // Read HDC1080
-        HDC1080_Write_Configuration(&hdc1080_settings); // Don't actually have to do this every time, but it shouldn't hurt
-        if (HDC1080_Read_Vals(&hdc1080_settings, &temperature, &humidity) == ESP_OK) {
+        // Read and update temp and humidity
+        if (read_temperature_and_humidity(&temperature, &humidity)) {
 
             zb_temperature = (int16_t) ((temperature+0.005)*100.0);   // Add 0.005 to do rounding instead of truncating
             zb_humidity = (uint16_t) ((humidity+0.005)*100.0);         // Add 0.005 to do rounding instead of truncating
@@ -351,18 +301,9 @@ static void update_all_sensors(void *arg) {
                     ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, false);
             }
         }
-        else {
-            ESP_LOGE(TAG, "Error reading HDC1080");
-        }
 
-        // Read OPT3001
-        OPT3001_Write_Configuration(&opt3001_settings); // Must write configuration to trigger single shot conversion
-        // Wait for conversion to finish
-        vTaskDelay(pdMS_TO_TICKS(opt3001_settings.configuration & OPT3001_CONFIG_CONVERSION_TIME_800MS_MASK? 1000 : 200));
-        if (OPT3001_Read_Lux(&opt3001_settings, &lux) == ESP_OK) {
-
-            ESP_LOGI("SENSOR_DATA", "LUX: %.2f", lux);
-
+        // Read and update ALS
+        if (read_illuminance(&lux)) {
             if (lux < 1) {  // Minimum value in ZCL definition
                 zb_illuminance = 0;
             }
@@ -377,14 +318,8 @@ static void update_all_sensors(void *arg) {
                     ESP_ZB_ZCL_ATTR_ILLUMINANCE_MEASUREMENT_MEASURED_VALUE_ID, &zb_illuminance, false);
             }           
         }
-        else {
-            ESP_LOGE(TAG, "Error reading OPT3001");
-        }
 
-        // Delete I2C bus and reset pins
-        ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
-        gpio_reset_pin(I2C_SCL);
-        gpio_reset_pin(I2C_SDA);
+        deinit_i2c_sensors();
 
         // Enable voltage divider
         gpio_set_direction(BAT_ADC_EN_GPIO, GPIO_MODE_OUTPUT);
