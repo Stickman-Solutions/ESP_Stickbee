@@ -3,9 +3,21 @@
 #include <opt3001.h>
 #include <esp_err.h>
 #include <driver/gpio.h>
+#include <esp_adc.h>
 
 
 static const char *TAG = "esp_stickbee_rev1-0.c";
+
+
+adc_oneshot_unit_handle_t bat_adc_handle;
+adc_oneshot_unit_init_cfg_t bat_adc_init_config = {
+    .unit_id = BAT_ADC,
+};
+adc_oneshot_chan_cfg_t bat_adc_config = {
+    .bitwidth = ADC_BITWIDTH_DEFAULT,
+    .atten = BAT_ADC_ATTEN,
+};
+adc_cali_handle_t bat_adc_cali_handle = NULL;
 
 
 i2c_master_bus_config_t i2c_bus_config = {
@@ -65,6 +77,8 @@ bool init_i2c_sensors() {
 
 bool deinit_i2c_sensors() {
     // Delete I2C bus and reset pins
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(hdc1080_dev_handle));
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(opt3001_dev_handle));
     ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
     gpio_reset_pin(I2C_SCL);
     gpio_reset_pin(I2C_SDA);
@@ -115,4 +129,60 @@ bool opt3001_read_illuminance(float *illuminance_out) {
     }
 
     return true;
+}
+
+
+static esp_err_t adc_init(void) {
+    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&bat_adc_init_config, &bat_adc_handle), TAG, "Failed to create ADC handle");
+    ESP_RETURN_ON_ERROR(adc_oneshot_config_channel(bat_adc_handle, BAT_ADC_CH, &bat_adc_config), TAG, "Failed to config ADC channel");
+
+    return adc_calibration_init(BAT_ADC, BAT_ADC_CH, BAT_ADC_ATTEN, &bat_adc_cali_handle) ? ESP_OK : ESP_FAIL;
+}
+
+bool adc_read_battery_voltage(int *battery_mv_out) {
+    // Check for null pointers
+    if (battery_mv_out == NULL) {
+        ESP_LOGE(TAG, "adc_read_battery_voltage() NULL pointer");
+        return false;
+    }
+
+    bool return_value = true;
+    int adc_raw = 0;
+
+    // Enable voltage divider
+    gpio_set_direction(BAT_ADC_EN_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(BAT_ADC_EN_GPIO, 0);
+    vTaskDelay(pdMS_TO_TICKS(ADC_DELAY_MS));
+
+    // Try initializing and deinitializing ADC before each sample (hoping to fix constant 4081 issue)
+    if (adc_init() != ESP_OK) {
+        ESP_LOGE(TAG, "Error initializing ADC");
+        return_value = false;
+    }
+
+    // Read ADC
+    if(adc_oneshot_read(bat_adc_handle, BAT_ADC_CH, &adc_raw) == ESP_OK) {
+        ESP_LOGD(TAG, "ADC value: %d", adc_raw);
+    }
+    else {
+        ESP_LOGE(TAG, "Error reading battery ADC");
+        return_value = false;
+    }
+
+    // Convert value to voltage
+    if (adc_cali_raw_to_voltage(bat_adc_cali_handle, adc_raw, battery_mv_out) == ESP_OK) {
+        *battery_mv_out = (int)((float)*battery_mv_out * BAT_ADC_MULTIPLIER);
+        ESP_LOGI(TAG, "Battery ADC voltage: %d", *battery_mv_out);
+    }
+    else {
+        ESP_LOGE(TAG, "Error converting battery ADC value");
+        return_value = false;
+    }
+
+    // Disable voltage divider pin and deinit
+    gpio_set_direction(BAT_ADC_EN_GPIO, GPIO_MODE_DISABLE);
+    adc_calibration_deinit(bat_adc_cali_handle);
+    adc_oneshot_del_unit(bat_adc_handle);
+
+    return return_value;
 }

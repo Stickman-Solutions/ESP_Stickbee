@@ -1,5 +1,4 @@
 #include "zigbee_funcs.h"
-#include "periph_funcs.h"
 
 #include "bsp_common.h"
 
@@ -27,20 +26,6 @@
 #define ESP_INTR_FLAG_DEFAULT 0
 #define LONG_PRESS_TIME_MS 1000
 #define LED_TURNOFF_TIMEOUT_MS 30000
-///////////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////////
-// ADC variables
-///////////////////////////////////////////////////////////////////////////////////////////
-adc_oneshot_unit_handle_t bat_adc_handle;
-adc_oneshot_unit_init_cfg_t bat_adc_init_config = {
-    .unit_id = BAT_ADC,
-};
-adc_oneshot_chan_cfg_t bat_adc_config = {
-    .bitwidth = ADC_BITWIDTH_DEFAULT,
-    .atten = BAT_ADC_ATTEN,
-};
-adc_cali_handle_t bat_adc_cali_handle = NULL;
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -245,24 +230,10 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-// Configure ADC
-///////////////////////////////////////////////////////////////////////////////////////////
-static esp_err_t adc_init(void) {
-    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&bat_adc_init_config, &bat_adc_handle), TAG, "Failed to create ADC handle");
-    ESP_RETURN_ON_ERROR(adc_oneshot_config_channel(bat_adc_handle, BAT_ADC_CH, &bat_adc_config), TAG, "Failed to config ADC channel");
-
-    if (adc_calibration_init(BAT_ADC, BAT_ADC_CH, BAT_ADC_ATTEN, &bat_adc_cali_handle)!= true) {
-        return !ESP_OK;
-    }
-    return ESP_OK;
-}
-///////////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////////
 // Function to update all sensors (HDC1080 and ADC)
 ///////////////////////////////////////////////////////////////////////////////////////////
 static void update_all_sensors(void *arg) {
-    int adc_raw, voltage;
+    int voltage;
     float temperature, humidity, lux;
 
     while (1) {
@@ -320,43 +291,22 @@ static void update_all_sensors(void *arg) {
         }
 
         deinit_i2c_sensors();
-
-        // Enable voltage divider
-        gpio_set_direction(BAT_ADC_EN_GPIO, GPIO_MODE_OUTPUT);
-        gpio_set_level(BAT_ADC_EN_GPIO, 0);
-        vTaskDelay(pdMS_TO_TICKS(ADC_DELAY_MS));
-
-        // Try initializing and deinitializing ADC before each sample (hoping to fix constant 4081 issue)
-        adc_init();
-
-        // Read ADC
-        if(adc_oneshot_read(bat_adc_handle, BAT_ADC_CH, &adc_raw) == ESP_OK) {
-            ESP_LOGI("ADC", "ADC value: %d", adc_raw);
-        }
-        if (adc_cali_raw_to_voltage(bat_adc_cali_handle, adc_raw, &voltage) == ESP_OK) {
-            ESP_LOGI("ADC", "ADC voltage: %d", voltage);
+        
+        // Read and update battery voltage
+        if (read_battery_voltage(&voltage)) {
+            zb_bat_voltage = (int16_t)voltage;
+            // If Zigbee has been started, update attribute
+            if (zb_started_flag == 1) {
+                esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
+                    CUSTOM_ELECTRICAL_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+                    CUSTOM_ELECTRICAL_CLUSTER_BATTERY_ATTR_ID, &zb_bat_voltage, false);
+                esp_zb_lock_release();
+            }
         }
 
         // Release power management
         esp_pm_lock_release(pm_lock);
         if (zb_started_flag == 1) {
-            esp_zb_lock_release();
-        }
-
-        // Disable voltage divider pin
-        gpio_set_direction(BAT_ADC_EN_GPIO, GPIO_MODE_DISABLE);
-
-        adc_calibration_deinit(bat_adc_cali_handle);
-        adc_oneshot_del_unit(bat_adc_handle);
-
-        zb_bat_voltage = (int16_t)voltage * 2;  // Consider the voltage divider
-
-        // If Zigbee has been started, update attribute
-        if (zb_started_flag == 1) {
-            esp_zb_lock_acquire(portMAX_DELAY);
-            esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
-                CUSTOM_ELECTRICAL_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                CUSTOM_ELECTRICAL_CLUSTER_BATTERY_ATTR_ID, &zb_bat_voltage, false);
             esp_zb_lock_release();
         }
         

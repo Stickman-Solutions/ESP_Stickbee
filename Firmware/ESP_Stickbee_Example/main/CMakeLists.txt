@@ -1,10 +1,10 @@
 idf_component_register(
     SRCS
         "main.c"
-        "periph_funcs.c"
         "../zigbee/zigbee_funcs.c"
         "../boards/bsp_common.c"
         "../boards/esp_stickbee_rev1-0.c"
+        "../boards/esp_adc.c"
     INCLUDE_DIRS
         "."
         "../zigbee"

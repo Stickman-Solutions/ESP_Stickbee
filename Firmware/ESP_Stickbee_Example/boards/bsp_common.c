@@ -22,6 +22,6 @@ bool read_illuminance(float *illuminance_out) {
 }
 
 
-bool read_battery_voltage(float *battery_voltage_out) {
-    return false;
+bool read_battery_voltage(int *battery_mv_out) {
+    return adc_read_battery_voltage(battery_mv_out);
 }
