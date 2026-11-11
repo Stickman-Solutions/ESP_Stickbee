@@ -1,6 +1,7 @@
 #include "zigbee_funcs.h"
 
 #include "bsp_common.h"
+#include <esp_stickbee_rev1-0.h> // TODO: remove
 
 #include "esp_pm.h"
 #include "esp_check.h"
@@ -86,10 +87,8 @@ static void led_turnoff_timer_callback(uint8_t input) {
     led_turnoff_alarm_scheduled = 0;
     // Turn off LEDs
     leds_enabled = 0;
-    gpio_hold_dis(IDENTIFY_LED_GPIO);
-    gpio_set_direction(IDENTIFY_LED_GPIO, GPIO_MODE_DISABLE);
-    gpio_hold_dis(NETWORK_LED_GPIO);
-    gpio_set_direction(NETWORK_LED_GPIO, GPIO_MODE_DISABLE);
+    bsp_turnoff_identify_led();
+    bsp_turnoff_network_led();
 }
 ///////////////////////////////////////////////////////////////////////////////////////////
 
@@ -105,9 +104,9 @@ static void long_press_timer_callback(uint8_t input) {
         //i2c_master_bus_rm_device(opt3001_dev_handle);  // Should be redundant if deleting the bus
         //i2c_del_master_bus(i2c_bus_handle);
         gpio_uninstall_isr_service();
-        gpio_hold_dis(LED0_GPIO);
-        gpio_hold_dis(LED1_GPIO);
-        gpio_hold_dis(LEDP_GPIO);
+        bsp_turnoff_identify_led();
+        bsp_turnoff_network_led();
+        bsp_turnoff_pir_led();
         ESP_LOGI(TAG, "Factory resetting");
         vTaskDelay(pdMS_TO_TICKS(100));
         esp_zb_factory_reset();
@@ -139,17 +138,10 @@ void button_handler(void *arg) {
                 long_press_alarm_scheduled = 1;
 
                 if (leds_enabled == 0) {
-                    // Turn on identify LED
-                    gpio_set_direction(IDENTIFY_LED_GPIO, GPIO_MODE_OUTPUT);
-                    gpio_hold_dis(IDENTIFY_LED_GPIO);
-                    gpio_set_level(IDENTIFY_LED_GPIO, 0);
-                    gpio_hold_en(IDENTIFY_LED_GPIO);
-                    // Set network LED
+                    // Turn on LEDs
+                    bsp_turnon_identify_led();
                     if (esp_zb_bdb_dev_joined()) {
-                        gpio_set_direction(NETWORK_LED_GPIO, GPIO_MODE_OUTPUT);
-                        gpio_hold_dis(NETWORK_LED_GPIO);
-                        gpio_set_level(NETWORK_LED_GPIO, 0);
-                        gpio_hold_en(NETWORK_LED_GPIO);
+                        bsp_turnon_network_led();
                     }
                     leds_enabled = 1;
 
@@ -170,10 +162,8 @@ void button_handler(void *arg) {
                 else {
                     // Turn off LEDs
                     leds_enabled = 0;
-                    gpio_hold_dis(IDENTIFY_LED_GPIO);
-                    gpio_set_direction(IDENTIFY_LED_GPIO, GPIO_MODE_DISABLE);
-                    gpio_hold_dis(NETWORK_LED_GPIO);
-                    gpio_set_direction(NETWORK_LED_GPIO, GPIO_MODE_DISABLE);
+                    bsp_turnoff_identify_led();
+                    bsp_turnoff_network_led();
 
                     // Cancel current alarm
                     if (led_turnoff_alarm_scheduled) {
@@ -246,53 +236,51 @@ static void update_all_sensors(void *arg) {
         // Lock power management to stop light sleep from occurring during delay
         ESP_ERROR_CHECK(esp_pm_lock_acquire(pm_lock));
 
-        init_i2c_sensors();
+        if (init_sensors()) {
 
-        // Read and update temp and humidity
-        if (read_temperature_and_humidity(&temperature, &humidity)) {
+            if (read_temperature_and_humidity(&temperature, &humidity)) {
 
-            zb_temperature = (int16_t) ((temperature+0.005)*100.0);   // Add 0.005 to do rounding instead of truncating
-            zb_humidity = (uint16_t) ((humidity+0.005)*100.0);         // Add 0.005 to do rounding instead of truncating
+                zb_temperature = (int16_t) ((temperature+0.005)*100.0);   // Add 0.005 to do rounding instead of truncating
+                zb_humidity = (uint16_t) ((humidity+0.005)*100.0);         // Add 0.005 to do rounding instead of truncating
 
-            ESP_LOGI("SENSOR_DATA", "TEMPERATURE: %.2f°C", temperature);
-            ESP_LOGI("SENSOR_DATA", "HUMIDITY: %.2f%%", humidity);
+                ESP_LOGI("SENSOR_DATA", "TEMPERATURE: %.2f°C", temperature);
+                ESP_LOGI("SENSOR_DATA", "HUMIDITY: %.2f%%", humidity);
 
-            // If Zigbee stack has been started, update attributes
-            if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
-                esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
-                    ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                    ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, false);
+                // If Zigbee stack has been started, update attributes
+                if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
+                    esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
+                        ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+                        ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, false);
 
-                esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
-                    ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                    ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, false);
+                    esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
+                        ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+                        ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, false);
 
-                esp_zb_lock_release();
+                    esp_zb_lock_release();
+                }
             }
+
+            if (read_illuminance(&lux)) {
+                if (lux < 1) {  // Minimum value in ZCL definition
+                    zb_illuminance = 0;
+                }
+                else {
+                    zb_illuminance = (uint16_t) (10000.0 * log10f(lux)) + 1;
+                }
+
+                // If Zigbee stack has been started, update attribute
+                if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
+                    esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
+                        ESP_ZB_ZCL_CLUSTER_ID_ILLUMINANCE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+                        ESP_ZB_ZCL_ATTR_ILLUMINANCE_MEASUREMENT_MEASURED_VALUE_ID, &zb_illuminance, false);
+
+                    esp_zb_lock_release();
+                }           
+            }
+
+            deinit_sensors();
         }
-
-        // Read and update ALS
-        if (read_illuminance(&lux)) {
-            if (lux < 1) {  // Minimum value in ZCL definition
-                zb_illuminance = 0;
-            }
-            else {
-                zb_illuminance = (uint16_t) (10000.0 * log10f(lux)) + 1;
-            }
-
-            // If Zigbee stack has been started, update attribute
-            if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
-                esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
-                    ESP_ZB_ZCL_CLUSTER_ID_ILLUMINANCE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                    ESP_ZB_ZCL_ATTR_ILLUMINANCE_MEASUREMENT_MEASURED_VALUE_ID, &zb_illuminance, false);
-
-                esp_zb_lock_release();
-            }           
-        }
-
-        deinit_i2c_sensors();
-        
-        // Read and update battery voltage
+            
         if (read_battery_voltage(&voltage)) {
             zb_bat_voltage = (int16_t)voltage;
             // If Zigbee has been started, update attribute
@@ -304,7 +292,7 @@ static void update_all_sensors(void *arg) {
                 esp_zb_lock_release();
             }
         }
-
+        
         // Release power management
         ESP_ERROR_CHECK(esp_pm_lock_release(pm_lock));
         
