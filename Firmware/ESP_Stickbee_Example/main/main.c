@@ -4,6 +4,7 @@
 
 #include "esp_pm.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
 
@@ -235,20 +236,15 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 static void update_all_sensors(void *arg) {
     int voltage;
     float temperature, humidity, lux;
+    
+    esp_pm_lock_handle_t pm_lock;
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_light_sleep", &pm_lock));
 
     while (1) {
-
         ESP_LOGI(TAG, "UPDATE ALL SENSORS:");
 
-        // Acquire lock to make sure Zigbee stuff isn't called during
-        if (zb_started_flag == 1) {
-            esp_zb_lock_acquire(portMAX_DELAY);
-        }
-
         // Lock power management to stop light sleep from occurring during delay
-        esp_pm_lock_handle_t pm_lock;
-        esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "no_light_sleep", &pm_lock);
-        esp_pm_lock_acquire(pm_lock);
+        ESP_ERROR_CHECK(esp_pm_lock_acquire(pm_lock));
 
         init_i2c_sensors();
 
@@ -262,7 +258,7 @@ static void update_all_sensors(void *arg) {
             ESP_LOGI("SENSOR_DATA", "HUMIDITY: %.2f%%", humidity);
 
             // If Zigbee stack has been started, update attributes
-            if (zb_started_flag == 1) {
+            if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
                 esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
                     ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, false);
@@ -270,6 +266,8 @@ static void update_all_sensors(void *arg) {
                 esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
                     ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, false);
+
+                esp_zb_lock_release();
             }
         }
 
@@ -283,10 +281,12 @@ static void update_all_sensors(void *arg) {
             }
 
             // If Zigbee stack has been started, update attribute
-            if (zb_started_flag == 1) {
+            if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
                 esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
                     ESP_ZB_ZCL_CLUSTER_ID_ILLUMINANCE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     ESP_ZB_ZCL_ATTR_ILLUMINANCE_MEASUREMENT_MEASURED_VALUE_ID, &zb_illuminance, false);
+
+                esp_zb_lock_release();
             }           
         }
 
@@ -296,19 +296,17 @@ static void update_all_sensors(void *arg) {
         if (read_battery_voltage(&voltage)) {
             zb_bat_voltage = (int16_t)voltage;
             // If Zigbee has been started, update attribute
-            if (zb_started_flag == 1) {
+            if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {
                 esp_zb_zcl_set_attribute_val(HA_ESP_SENSOR_ENDPOINT,
                     CUSTOM_ELECTRICAL_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
                     CUSTOM_ELECTRICAL_CLUSTER_BATTERY_ATTR_ID, &zb_bat_voltage, false);
+
                 esp_zb_lock_release();
             }
         }
 
         // Release power management
-        esp_pm_lock_release(pm_lock);
-        if (zb_started_flag == 1) {
-            esp_zb_lock_release();
-        }
+        ESP_ERROR_CHECK(esp_pm_lock_release(pm_lock));
         
         // Set flag first time this is sampled
         if (first_sensor_sample_flag == 0) {
