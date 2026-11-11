@@ -28,6 +28,7 @@ bool read_battery_voltage(int *battery_mv_out) {
 }
 
 
+// GPIO related abstractions
 static void hold_gpio_level(gpio_num_t gpio, bool level) {
     gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
     gpio_hold_dis(gpio);
@@ -62,4 +63,12 @@ void bsp_turnon_pir_led(void) {
 
 void bsp_turnoff_pir_led(void) {
     disable_gpio(LEDP_GPIO);
+}
+
+bool bsp_motion_detected(void) {
+    return gpio_get_level(PIR_GPIO);
+}
+
+bool bsp_button_pressed(void) {
+    return gpio_get_level(BUTT0_GPIO) == 0;
 }

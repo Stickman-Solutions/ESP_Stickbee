@@ -15,3 +15,5 @@ void bsp_turnoff_identify_led(void);
 void bsp_turnoff_network_led(void);
 void bsp_turnon_pir_led(void);
 void bsp_turnoff_pir_led(void);
+bool bsp_motion_detected(void);
+bool bsp_button_pressed(void);
