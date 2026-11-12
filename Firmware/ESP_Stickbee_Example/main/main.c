@@ -57,13 +57,7 @@ void pir_sensor_update(void *arg) {
     uint8_t zb_occupancy;
     while (1) {
         zb_occupancy = bsp_motion_detected();
-        PIR_interrupt_type = zb_occupancy? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
-
-        // Change interrupt level
-        ESP_ERROR_CHECK(gpio_set_intr_type(PIR_GPIO, PIR_interrupt_type));
-        // Change wakeup level on GPIO (also changes the button wakeup level, but this isn't as critical as PIR)
-        // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
-        ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((zb_occupancy? 1ULL : 0) << BUTT0_GPIO), zb_occupancy? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH));
+        bsp_pir_handle_isr(zb_occupancy);       // Update next interrupt / wakeup level
 
         // If Zigbee has started, update the attribute
         if (zb_started_flag == 1) {

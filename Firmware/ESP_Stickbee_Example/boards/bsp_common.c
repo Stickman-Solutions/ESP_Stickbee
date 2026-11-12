@@ -1,6 +1,7 @@
 #include <bsp_common.h>
 #include <esp_stickbee_rev1-0.h>
 #include <driver/gpio.h>
+#include <esp_sleep.h>
 
 
 bool init_sensors(void) {
@@ -71,4 +72,15 @@ bool bsp_motion_detected(void) {
 
 bool bsp_button_pressed(void) {
     return gpio_get_level(BUTT0_GPIO) == 0;
+}
+
+void bsp_pir_handle_isr(bool occupied) {
+    // Invert interrupt level
+    gpio_int_type_t next_trigger = occupied ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
+    ESP_ERROR_CHECK(gpio_set_intr_type(PIR_GPIO, next_trigger));
+
+    // Change wakeup level on GPIO (also changes the button wakeup level, but this isn't as critical as PIR)
+    // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
+    esp_sleep_ext1_wakeup_mode_t next_wake_mode = occupied ? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH;
+    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((occupied? 1ULL : 0) << BUTT0_GPIO), next_wake_mode));
 }
