@@ -76,6 +76,11 @@ bool bsp_button_pressed(void) {
     return gpio_get_level(BUTT0_GPIO) == 0;
 }
 
+void bsp_button_handle_isr(bool pressed) {
+    gpio_int_type_t next_trigger = pressed ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
+    ESP_ERROR_CHECK(gpio_set_intr_type(BUTT0_GPIO, next_trigger));
+}
+
 void bsp_pir_handle_isr(bool occupied) {
     // Invert interrupt level
     gpio_int_type_t next_trigger = occupied ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;

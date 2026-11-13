@@ -1,7 +1,5 @@
 #include "zigbee_funcs.h"
-
 #include "bsp_common.h"
-#include <esp_stickbee_rev1-0.h> // TODO: remove
 
 #include "esp_pm.h"
 #include "esp_check.h"
@@ -15,6 +13,9 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "math.h"
+
+
+static const char *TAG = "main.c";
 
 
 #define MAJOR_SOFTWARE_VER 0
@@ -35,11 +36,6 @@ extern uint16_t zb_humidity, zb_illuminance;
 extern uint8_t zb_started_flag;
 uint8_t long_press_alarm_scheduled = 0;
 uint8_t led_turnoff_alarm_scheduled = 0;
-
-uint8_t PIR_interrupt_type, BUTT0_interrupt_type;
-
-
-static const char *TAG = "ESP_STICKBEE";
 
 
 TaskHandle_t pir_sensor_update_handle = NULL;
@@ -79,9 +75,6 @@ static void long_press_timer_callback(uint8_t input) {
     long_press_alarm_scheduled = 0;
     // If button is still pressed
     if (bsp_button_pressed()) {
-        //i2c_master_bus_rm_device(hdc1080_dev_handle);  // Should be redundant if deleting the bus
-        //i2c_master_bus_rm_device(opt3001_dev_handle);  // Should be redundant if deleting the bus
-        //i2c_del_master_bus(i2c_bus_handle);
         gpio_uninstall_isr_service();
         bsp_turnoff_identify_led();
         bsp_turnoff_network_led();
@@ -98,7 +91,7 @@ void button_handler(void *arg) {
     bool button_pressed;
     while(1) {
         button_pressed = bsp_button_pressed();
-        BUTT0_interrupt_type = button_pressed? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
+        ESP_LOGI(TAG, "Button %s", button_pressed? "pressed" : "released");
 
         // Wait for Zigbee stack to be started before accepting button press
         if (zb_started_flag) {
@@ -154,15 +147,7 @@ void button_handler(void *arg) {
         }
 
         // Change interrupt level
-        ESP_ERROR_CHECK(gpio_set_intr_type(BUTT0_GPIO, BUTT0_interrupt_type));
-        // Change wakeup level on GPIO
-        //ESP_ERROR_CHECK(gpio_wakeup_disable(BUTT0_GPIO));
-        //ESP_ERROR_CHECK(esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO));
-        //ESP_ERROR_CHECK(gpio_wakeup_enable(BUTT0_GPIO, BUTT0_interrupt_type));   
-        //ESP_ERROR_CHECK(gpio_wakeup_enable(PIR_GPIO, PIR_interrupt_type));  // Make sure PIR wakeup stays enabled
-        //ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
-
-        ESP_LOGI(TAG, "Button %s", button_pressed? "pressed" : "released");
+        bsp_button_handle_isr(button_pressed);
         vTaskSuspend(NULL);
     }
 }
@@ -254,7 +239,7 @@ static void update_all_sensors(void *arg) {
 static void init_tasks(void)
 {
     bsp_gpio_init();
-    
+
     ESP_ERROR_CHECK((xTaskCreate(update_all_sensors, "update_all_sensors", 8192, NULL, 10, NULL) == pdTRUE) ? ESP_OK : ESP_FAIL);
     
     ESP_ERROR_CHECK((xTaskCreate(button_handler, "button_handler", 4096, NULL, 10, &button_handler_handle) == pdTRUE) ? ESP_OK : ESP_FAIL);

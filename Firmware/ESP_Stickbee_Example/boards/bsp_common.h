@@ -19,6 +19,7 @@ void bsp_turnon_pir_led(void);
 void bsp_turnoff_pir_led(void);
 bool bsp_motion_detected(void);
 bool bsp_button_pressed(void);
+void bsp_button_handle_isr(bool pressed);
 void bsp_pir_handle_isr(bool occupied);
 void bsp_gpio_init(void);
 void bsp_gpio_start_isr(TaskHandle_t pir_task, TaskHandle_t button_task);
