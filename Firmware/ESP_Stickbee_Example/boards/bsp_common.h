@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 
 bool init_sensors(void);
@@ -18,3 +20,4 @@ void bsp_turnoff_pir_led(void);
 bool bsp_motion_detected(void);
 bool bsp_button_pressed(void);
 void bsp_pir_handle_isr(bool occupied);
+void bsp_gpio_init(TaskHandle_t pir_task, TaskHandle_t button_task);

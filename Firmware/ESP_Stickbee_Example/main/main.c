@@ -25,7 +25,6 @@
 #define SENSOR_UPDATE_PERIOD_SEC 300
 #define ZIGBEE_SLEEP_TIME_MS 9000
 
-#define ESP_INTR_FLAG_DEFAULT 0
 #define LONG_PRESS_TIME_MS 1000
 #define LED_TURNOFF_TIMEOUT_MS 30000
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -189,28 +188,7 @@ void button_handler(void *arg) {
 ///////////////////////////////////////////////////////////////////////////////////////////
 // Set up PIR sensor interrupt
 ///////////////////////////////////////////////////////////////////////////////////////////
-static QueueHandle_t gpio_isr_evt_queue = NULL;
-static void IRAM_ATTR gpio_isr_handler(void* arg)
-{
-    uint32_t gpio_num = (uint32_t) arg;
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    switch (gpio_num) {
-        case PIR_GPIO:
-            // Disable interrupt (will be changed to occur on opposite logic level in task)
-            gpio_set_intr_type(PIR_GPIO, GPIO_INTR_DISABLE);
-            xHigherPriorityTaskWoken = xTaskResumeFromISR(pir_sensor_update_handle);
-            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-            break;
 
-        case BUTT0_GPIO:
-            // Disable interrupt (will be changed to occur on opposite logic level in task)
-            gpio_set_intr_type(BUTT0_GPIO, GPIO_INTR_DISABLE);
-            xHigherPriorityTaskWoken = xTaskResumeFromISR(button_handler_handle);
-            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-            break;
-    }
-
-}
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -312,76 +290,14 @@ static esp_err_t multisensor_init(void)
 ///////////////////////////////////////////////////////////////////////////////////////////
 // Configure GPIO
 ///////////////////////////////////////////////////////////////////////////////////////////
-static esp_err_t gpio_init(void) { 
-    gpio_config_t pir_io_conf = {
-        .pin_bit_mask = (1ULL << PIR_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    }; 
-    gpio_config_t led0_io_conf = {
-        .pin_bit_mask = (1ULL << LED0_GPIO),
-        .mode = GPIO_MODE_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config_t led1_io_conf = {
-        .pin_bit_mask = (1ULL << LED1_GPIO),
-        .mode = GPIO_MODE_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config_t ledp_io_conf = {
-        .pin_bit_mask = (1ULL << LEDP_GPIO),
-        .mode = GPIO_MODE_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config_t bat_adc_en_io_conf = {
-        .pin_bit_mask = (1ULL << BAT_ADC_EN_GPIO),
-        .mode = GPIO_MODE_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config_t butt0_io_conf = {
-        .pin_bit_mask = (1ULL << BUTT0_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,   
-    };
-
-    ESP_RETURN_ON_ERROR(gpio_config(&pir_io_conf), TAG, "Failed to configure PIR GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&led0_io_conf), TAG, "Failed to configure LED0 GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&led1_io_conf), TAG, "Failed to configure LED1 GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&ledp_io_conf), TAG, "Failed to configure PIR LED GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&bat_adc_en_io_conf), TAG, "Failed to configure BAT ADC enable GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&butt0_io_conf), TAG, "Failed to configure BUTT0 GPIO");
-
-    // Do this to avoid race conditions on boot from PIR GPIO
-    uint8_t pir_level = gpio_get_level(PIR_GPIO);
-    PIR_interrupt_type = pir_level? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
-    ESP_RETURN_ON_ERROR(gpio_set_intr_type(PIR_GPIO, PIR_interrupt_type), TAG, "Failed to set PIR interrupt type");
-    ESP_RETURN_ON_ERROR(gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT), TAG, "Failed to install ISR service");
-    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(PIR_GPIO, gpio_isr_handler, (void*) PIR_GPIO), TAG, "Failed to initialize PIR pin interrupt");
-    
-    // Do this to avoid race conditions on boot from BUTT0 GPIO
-    BUTT0_interrupt_type = gpio_get_level(BUTT0_GPIO)? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
-    ESP_RETURN_ON_ERROR(gpio_set_intr_type(BUTT0_GPIO, BUTT0_interrupt_type), TAG, "Failed to set BUTT0 interrupt type");
-    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO), TAG, "Failed to initialize BUTT0 pin interrupt");  
-
-    // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
-    ESP_RETURN_ON_ERROR(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((pir_level? 1ULL : 0) << BUTT0_GPIO), pir_level? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH), TAG, "Failed to enable EXT1 wakeup");
-    gpio_isr_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+static esp_err_t gpio_input_init(void) { 
     esp_err_t return_err = (xTaskCreate(button_handler, "button_handler", 4096, NULL, 10, &button_handler_handle) == pdTRUE) ? ESP_OK : ESP_FAIL;
     vTaskSuspend(button_handler_handle);  // Suspend the task initially
+
     return_err = (xTaskCreate(pir_sensor_update, "pir_update", 4096, NULL, 10, &pir_sensor_update_handle) == pdTRUE) ? ESP_OK : ESP_FAIL;
     vTaskSuspend(pir_sensor_update_handle);  // Suspend the task initially
+
+    bsp_gpio_init(pir_sensor_update_handle, button_handler_handle);
     return return_err;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////
