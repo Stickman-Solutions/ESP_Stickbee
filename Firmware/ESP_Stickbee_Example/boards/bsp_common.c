@@ -113,10 +113,7 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 
 }
 
-void bsp_gpio_init(TaskHandle_t pir_task, TaskHandle_t button_task) {
-    pir_task_handle = pir_task;
-    button_task_handle = button_task;
-
+void bsp_gpio_init(void) {
     gpio_config_t pir_io_conf = {
         .pin_bit_mask = (1ULL << PIR_GPIO),
         .mode = GPIO_MODE_INPUT,
@@ -170,13 +167,20 @@ void bsp_gpio_init(TaskHandle_t pir_task, TaskHandle_t button_task) {
     // Do this to avoid race conditions on boot from PIR GPIO
     uint8_t pir_level = gpio_get_level(PIR_GPIO);
     ESP_ERROR_CHECK(gpio_set_intr_type(PIR_GPIO, pir_level ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL));
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(PIR_GPIO, gpio_isr_handler, (void*) PIR_GPIO));
-    
+   
     // Do this to avoid race conditions on boot from BUTT0 GPIO
     ESP_ERROR_CHECK(gpio_set_intr_type(BUTT0_GPIO, gpio_get_level(BUTT0_GPIO) ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO));  
 
     // If looking for LOW wakeup, add BUTT0 to wakeup, if HIGH, don't include BUTT0
     ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup((1ULL << PIR_GPIO) | ((pir_level ? 1ULL : 0) << BUTT0_GPIO), pir_level ? ESP_EXT1_WAKEUP_ANY_LOW : ESP_EXT1_WAKEUP_ANY_HIGH));
+}
+
+
+void bsp_gpio_start_isr(TaskHandle_t pir_task, TaskHandle_t button_task) {
+    pir_task_handle = pir_task;
+    button_task_handle = button_task;
+
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(PIR_GPIO, gpio_isr_handler, (void*) PIR_GPIO));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO));  
 }

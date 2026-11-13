@@ -16,9 +16,7 @@
 #include "driver/gpio.h"
 #include "math.h"
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Constant definitions (including pin numbers)
-///////////////////////////////////////////////////////////////////////////////////////////
+
 #define MAJOR_SOFTWARE_VER 0
 #define MINOR_SOFTWARE_VER 1
 
@@ -27,11 +25,8 @@
 
 #define LONG_PRESS_TIME_MS 1000
 #define LED_TURNOFF_TIMEOUT_MS 30000
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Zigbee variables
-///////////////////////////////////////////////////////////////////////////////////////////
+
 uint8_t first_sensor_sample_flag = 0;   // Flag is set after first sensor sample occurs (stops Zigbee from reporting 0s on restart)
 uint8_t hdc1080_done_flag = 0;          // Set after reading callback has been called
 extern uint8_t leds_enabled;
@@ -43,13 +38,10 @@ uint8_t led_turnoff_alarm_scheduled = 0;
 
 uint8_t PIR_interrupt_type, BUTT0_interrupt_type;
 
-///////////////////////////////////////////////////////////////////////////////////////////
 
 static const char *TAG = "ESP_STICKBEE";
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Update PIR sensor attribute when interrupt is called
-///////////////////////////////////////////////////////////////////////////////////////////
+
 TaskHandle_t pir_sensor_update_handle = NULL;
 void pir_sensor_update(void *arg) {
     //uint32_t io_num;
@@ -70,11 +62,8 @@ void pir_sensor_update(void *arg) {
         vTaskSuspend(NULL); // Suspend task until resumed by ISR
     }
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Timer callback for LED turnoff
-///////////////////////////////////////////////////////////////////////////////////////////
+
 static void led_turnoff_timer_callback(uint8_t input) {
     ESP_LOGI(TAG, "LED turnoff timer callback");
     led_turnoff_alarm_scheduled = 0;
@@ -83,11 +72,8 @@ static void led_turnoff_timer_callback(uint8_t input) {
     bsp_turnoff_identify_led();
     bsp_turnoff_network_led();
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Timer callback for button long press
-///////////////////////////////////////////////////////////////////////////////////////////
+
 static void long_press_timer_callback(uint8_t input) {
     ESP_LOGI(TAG, "Long press timer callback");
     long_press_alarm_scheduled = 0;
@@ -105,11 +91,8 @@ static void long_press_timer_callback(uint8_t input) {
         esp_zb_factory_reset();
     }
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Handle button press/release
-///////////////////////////////////////////////////////////////////////////////////////////
+
 TaskHandle_t button_handler_handle = NULL;
 void button_handler(void *arg) {
     bool button_pressed;
@@ -183,17 +166,8 @@ void button_handler(void *arg) {
         vTaskSuspend(NULL);
     }
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Set up PIR sensor interrupt
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////////
-// Function to update all sensors (HDC1080 and ADC)
-///////////////////////////////////////////////////////////////////////////////////////////
 static void update_all_sensors(void *arg) {
     int voltage;
     float temperature, humidity, lux;
@@ -211,8 +185,8 @@ static void update_all_sensors(void *arg) {
 
             if (read_temperature_and_humidity(&temperature, &humidity)) {
 
-                zb_temperature = (int16_t) ((temperature+0.005)*100.0);   // Add 0.005 to do rounding instead of truncating
-                zb_humidity = (uint16_t) ((humidity+0.005)*100.0);         // Add 0.005 to do rounding instead of truncating
+                zb_temperature = (int16_t) ((temperature+0.005)*100.0);     // Add 0.005 to do rounding instead of truncating
+                zb_humidity = (uint16_t) ((humidity+0.005)*100.0);          // Add 0.005 to do rounding instead of truncating
 
                 ESP_LOGI("SENSOR_DATA", "TEMPERATURE: %.2f°C", temperature);
                 ESP_LOGI("SENSOR_DATA", "HUMIDITY: %.2f%%", humidity);
@@ -275,47 +249,24 @@ static void update_all_sensors(void *arg) {
         vTaskDelay(pdMS_TO_TICKS(SENSOR_UPDATE_PERIOD_SEC * 1000));
     }
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Configure HDC1080 and start multisense sampling loop
-// DEPRECATED, I2C IS INITIALIZED AND DEINITIALIZED EVERY LOOP
-///////////////////////////////////////////////////////////////////////////////////////////
-static esp_err_t multisensor_init(void)
+
+static void init_tasks(void)
 {
-    return (xTaskCreate(update_all_sensors, "update_all_sensors", 8192, NULL, 10, NULL) == pdTRUE) ? ESP_OK : ESP_FAIL;
-}
-///////////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////////
-// Configure GPIO
-///////////////////////////////////////////////////////////////////////////////////////////
-static esp_err_t gpio_input_init(void) { 
-    esp_err_t return_err = (xTaskCreate(button_handler, "button_handler", 4096, NULL, 10, &button_handler_handle) == pdTRUE) ? ESP_OK : ESP_FAIL;
+    bsp_gpio_init();
+    
+    ESP_ERROR_CHECK((xTaskCreate(update_all_sensors, "update_all_sensors", 8192, NULL, 10, NULL) == pdTRUE) ? ESP_OK : ESP_FAIL);
+    
+    ESP_ERROR_CHECK((xTaskCreate(button_handler, "button_handler", 4096, NULL, 10, &button_handler_handle) == pdTRUE) ? ESP_OK : ESP_FAIL);
     vTaskSuspend(button_handler_handle);  // Suspend the task initially
-
-    return_err = (xTaskCreate(pir_sensor_update, "pir_update", 4096, NULL, 10, &pir_sensor_update_handle) == pdTRUE) ? ESP_OK : ESP_FAIL;
+    
+    ESP_ERROR_CHECK((xTaskCreate(pir_sensor_update, "pir_update", 4096, NULL, 10, &pir_sensor_update_handle) == pdTRUE) ? ESP_OK : ESP_FAIL);
     vTaskSuspend(pir_sensor_update_handle);  // Suspend the task initially
-
-    bsp_gpio_init(pir_sensor_update_handle, button_handler_handle);
-    return return_err;
+    
+    bsp_gpio_start_isr(pir_sensor_update_handle, button_handler_handle);
 }
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// Initialize drivers
-///////////////////////////////////////////////////////////////////////////////////////////
-static esp_err_t init_all_drivers(void)
-{
-    ESP_RETURN_ON_ERROR(gpio_init(), TAG, "Failed to set up GPIO and interrupt");
-    ESP_RETURN_ON_ERROR(multisensor_init(), TAG, "Failed to initialize DHT driver");
-    return ESP_OK;
-}
-///////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////
-// App_main, really only called once. Init drivers here
-///////////////////////////////////////////////////////////////////////////////////////////
 void app_main(void)
 {
     esp_zb_platform_config_t config = {
@@ -332,7 +283,7 @@ void app_main(void)
     ESP_LOGI(TAG, "ESP_STICKBEE SOFTWARE VERSION: %d.%d", MAJOR_SOFTWARE_VER, MINOR_SOFTWARE_VER);
 
     // Initialize all drivers/peripherals
-    ESP_LOGI(TAG, "All driver initialization %s", init_all_drivers() ? "failed" : "successful");
+    init_tasks();
 
     // Wait for first sample to occur with a timeout
     const TickType_t timeout_ticks = pdMS_TO_TICKS(1000);  // Timeout of 10 seconds
@@ -347,4 +298,3 @@ void app_main(void)
     // Start Zigbee stack task
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
-///////////////////////////////////////////////////////////////////////////////////////////
