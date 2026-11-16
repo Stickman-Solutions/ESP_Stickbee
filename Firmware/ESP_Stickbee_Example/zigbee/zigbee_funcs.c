@@ -1,7 +1,6 @@
 #include <zigbee_funcs.h>
-#include <esp_stickbee_rev1-0.h>
+#include <bsp_common.h>
 #include <esp_pm.h>
-#include <driver/gpio.h>
 #include <esp_check.h>
 
 
@@ -22,20 +21,6 @@ uint8_t zb_currently_identifying = 0;
 uint8_t leds_enabled = 0;       // When set, allow network LED to turn on
 
 
-static void deinit_and_restart() {
-    //i2c_master_bus_rm_device(hdc1080_dev_handle);  // Should be redundant if deleting the bus
-    //i2c_master_bus_rm_device(opt3001_dev_handle);  // Should be redundant if deleting the bus
-    //i2c_del_master_bus(i2c_bus_handle);
-    //adc_calibration_deinit(bat_adc_cali_handle);
-    //adc_oneshot_del_unit(bat_adc_handle);
-    gpio_uninstall_isr_service();
-    gpio_hold_dis(LED0_GPIO);
-    gpio_hold_dis(LED1_GPIO);
-    gpio_hold_dis(LEDP_GPIO);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    esp_restart();
-}
-
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
@@ -47,9 +32,8 @@ static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 static void handle_zigbee_unavilable(uint8_t input) {
     zb_unavailable_alarm_flag = 0;
     if (zb_network_status != 1) {   // If the device hasn't joined a zigbee network
-        //esp_zb_factory_reset();
-        deinit_and_restart();
-        //bdb_start_top_level_commissioning_cb(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+        bsp_deinit_for_restart();
+        esp_restart();
     }
 }
 
@@ -78,7 +62,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             /* commissioning failed */
             ESP_LOGW(TAG, "Failed to initialize Zigbee stack (status: %s)", esp_err_to_name(err_status));
             // This is caused when the parent node can't be found. Keep resetting until parent node is found: https://github.com/espressif/esp-zigbee-sdk/issues/169#issuecomment-1849540638
-            deinit_and_restart();
+            bsp_deinit_for_restart();
+            esp_restart();
         }
         break;
     case ESP_ZB_BDB_SIGNAL_STEERING:
@@ -119,7 +104,6 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGI(TAG, "Zigbee unavailable alarm set");
             esp_zb_scheduler_alarm((esp_zb_callback_t)handle_zigbee_unavilable, 0, 60*1000);
         }
-        //deinit_and_restart();
         break;
     // Handle unavailable signal
     case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:
@@ -146,14 +130,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     // Handle network LED
     if (leds_enabled == 1) {
         if (esp_zb_bdb_dev_joined()) {
-            gpio_set_direction(NETWORK_LED_GPIO, GPIO_MODE_OUTPUT);
-            gpio_hold_dis(NETWORK_LED_GPIO);
-            gpio_set_level(NETWORK_LED_GPIO, 0);
-            gpio_hold_en(NETWORK_LED_GPIO);
+            bsp_turnon_network_led();
         }
         else {
-            gpio_hold_dis(NETWORK_LED_GPIO);
-            gpio_set_direction(NETWORK_LED_GPIO, GPIO_MODE_DISABLE);
+            bsp_turnoff_network_led();
         }
     }
 }
@@ -220,9 +200,7 @@ esp_err_t esp_zb_power_save_init(void)
 
 
 static void identify_led_toggler(uint8_t led_state) {
-    gpio_hold_dis(IDENTIFY_LED_GPIO);
-    gpio_set_level(IDENTIFY_LED_GPIO, led_state);
-    gpio_hold_en(IDENTIFY_LED_GPIO);
+    led_state ? bsp_turnoff_identify_led() : bsp_turnon_identify_led();
 
     if (zb_currently_identifying == 1) {
         esp_zb_scheduler_alarm((esp_zb_callback_t)identify_led_toggler, !led_state, 100);
@@ -242,8 +220,7 @@ static void identify_cluster_handler(uint8_t last_alarm_call) {
 
     // For the last alarm call to this function, disable LED pin
     if (last_alarm_call) {
-        gpio_hold_dis(IDENTIFY_LED_GPIO);
-        gpio_set_direction(IDENTIFY_LED_GPIO, GPIO_MODE_DISABLE);
+        bsp_turnoff_identify_led();
         zb_currently_identifying = 0;
         esp_zb_scheduler_alarm_cancel((esp_zb_callback_t)identify_led_toggler, 0);  // Cancel alarm just in case
     }
@@ -272,13 +249,10 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                 light_state = message->attribute.data.value ? *(bool *)message->attribute.data.value : light_state;
                 ESP_LOGI(TAG, "PIR LED set to %s", light_state ? "on" : "off");
                 if (light_state == 0) {
-                    gpio_hold_dis(LEDP_GPIO);
-                    gpio_set_direction(LEDP_GPIO, GPIO_MODE_DISABLE);
+                    bsp_turnoff_pir_led();
                 }
                 else {
-                    gpio_set_direction(LEDP_GPIO, GPIO_MODE_OUTPUT);
-                    gpio_set_level(LEDP_GPIO, 0);
-                    gpio_hold_en(LEDP_GPIO);
+                    bsp_turnon_pir_led();
                 }
             }
         }
@@ -291,10 +265,7 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                     ESP_LOGI(TAG, "Identify time set to %d seconds", zb_identify_time);
 
                     // Turn on identify LED initially
-                    gpio_set_direction(IDENTIFY_LED_GPIO, GPIO_MODE_OUTPUT);
-                    gpio_hold_dis(IDENTIFY_LED_GPIO);
-                    gpio_set_level(IDENTIFY_LED_GPIO, 0);
-                    gpio_hold_en(IDENTIFY_LED_GPIO);
+                    bsp_turnon_identify_led();
 
                     zb_currently_identifying = 1;
                     esp_zb_scheduler_alarm((esp_zb_callback_t)identify_led_toggler, 1, 100);
