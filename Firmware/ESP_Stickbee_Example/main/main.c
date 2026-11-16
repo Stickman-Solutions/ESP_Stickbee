@@ -11,7 +11,6 @@
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 #include "math.h"
 
 
@@ -75,12 +74,8 @@ static void long_press_timer_callback(uint8_t input) {
     long_press_alarm_scheduled = 0;
     // If button is still pressed
     if (bsp_button_pressed()) {
-        gpio_uninstall_isr_service();
-        bsp_turnoff_identify_led();
-        bsp_turnoff_network_led();
-        bsp_turnoff_pir_led();
         ESP_LOGI(TAG, "Factory resetting");
-        vTaskDelay(pdMS_TO_TICKS(100));
+        bsp_deinit_for_restart();
         esp_zb_factory_reset();
     }
 }

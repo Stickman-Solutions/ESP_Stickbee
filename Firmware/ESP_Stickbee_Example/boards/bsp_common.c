@@ -189,3 +189,12 @@ void bsp_gpio_start_isr(TaskHandle_t pir_task, TaskHandle_t button_task) {
     ESP_ERROR_CHECK(gpio_isr_handler_add(PIR_GPIO, gpio_isr_handler, (void*) PIR_GPIO));
     ESP_ERROR_CHECK(gpio_isr_handler_add(BUTT0_GPIO, gpio_isr_handler, (void*) BUTT0_GPIO));  
 }
+
+
+void bsp_deinit_for_restart(void) {
+        gpio_uninstall_isr_service();
+        bsp_turnoff_identify_led();
+        bsp_turnoff_network_led();
+        bsp_turnoff_pir_led();
+        vTaskDelay(pdMS_TO_TICKS(100));
+}

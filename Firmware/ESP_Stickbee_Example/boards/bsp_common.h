@@ -23,3 +23,4 @@ void bsp_button_handle_isr(bool pressed);
 void bsp_pir_handle_isr(bool occupied);
 void bsp_gpio_init(void);
 void bsp_gpio_start_isr(TaskHandle_t pir_task, TaskHandle_t button_task);
+void bsp_deinit_for_restart(void);
