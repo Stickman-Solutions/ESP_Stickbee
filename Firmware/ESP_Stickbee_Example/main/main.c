@@ -161,9 +161,9 @@ static void update_all_sensors(void *arg) {
         // Lock power management to stop light sleep from occurring during delay
         ESP_ERROR_CHECK(esp_pm_lock_acquire(pm_lock));
 
-        if (init_sensors()) {
+        if (bsp_init_sensors()) {
 
-            if (read_temperature_and_humidity(&temperature, &humidity)) {
+            if (bsp_read_temperature_and_humidity(&temperature, &humidity)) {
 
                 zb_temperature = (int16_t) ((temperature+0.005)*100.0);     // Add 0.005 to do rounding instead of truncating
                 zb_humidity = (uint16_t) ((humidity+0.005)*100.0);          // Add 0.005 to do rounding instead of truncating
@@ -185,7 +185,7 @@ static void update_all_sensors(void *arg) {
                 }
             }
 
-            if (read_illuminance(&lux)) {
+            if (bsp_read_illuminance(&lux)) {
                 if (lux < 1) {  // Minimum value in ZCL definition
                     zb_illuminance = 0;
                 }
@@ -203,10 +203,10 @@ static void update_all_sensors(void *arg) {
                 }           
             }
 
-            deinit_sensors();
+            bsp_deinit_sensors();
         }
             
-        if (read_battery_voltage(&voltage)) {
+        if (bsp_read_battery_voltage(&voltage)) {
             zb_bat_voltage = (int16_t)voltage;
             // If Zigbee has been started, update attribute
             if (zb_started_flag == 1 && esp_zb_lock_acquire(portMAX_DELAY)) {

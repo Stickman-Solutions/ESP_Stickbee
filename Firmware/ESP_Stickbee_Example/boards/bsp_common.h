@@ -5,11 +5,11 @@
 #include <freertos/task.h>
 
 
-bool init_sensors(void);
-bool deinit_sensors(void);
-bool read_temperature_and_humidity(float *temperature_out, float *humidity_out);
-bool read_illuminance(float *illuminance_out);
-bool read_battery_voltage(int *battery_mv_out);
+bool bsp_init_sensors(void);
+bool bsp_deinit_sensors(void);
+bool bsp_read_temperature_and_humidity(float *temperature_out, float *humidity_out);
+bool bsp_read_illuminance(float *illuminance_out);
+bool bsp_read_battery_voltage(int *battery_mv_out);
 
 void bsp_turnon_identify_led(void);
 void bsp_turnon_network_led(void);

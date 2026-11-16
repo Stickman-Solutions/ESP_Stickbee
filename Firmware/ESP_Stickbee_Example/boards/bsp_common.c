@@ -6,27 +6,27 @@
 
 
 
-bool init_sensors(void) {
+bool bsp_init_sensors(void) {
     return init_i2c_sensors();
 }
 
 
-bool deinit_sensors(void) {
+bool bsp_deinit_sensors(void) {
     return deinit_i2c_sensors();
 }
 
 
-bool read_temperature_and_humidity(float *temperature_out, float *humidity_out) {
+bool bsp_read_temperature_and_humidity(float *temperature_out, float *humidity_out) {
     return hdc1080_read_temperature_and_humidity(temperature_out, humidity_out);
 }
 
 
-bool read_illuminance(float *illuminance_out) {
+bool bsp_read_illuminance(float *illuminance_out) {
     return opt3001_read_illuminance(illuminance_out);
 }
 
 
-bool read_battery_voltage(int *battery_mv_out) {
+bool bsp_read_battery_voltage(int *battery_mv_out) {
     return adc_read_battery_voltage(battery_mv_out);
 }
 
