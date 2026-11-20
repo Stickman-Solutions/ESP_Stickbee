@@ -1,0 +1,12 @@
+# Run with podman-compose run --rm idf
+services:
+  idf:
+    image: docker.io/espressif/idf:v5.5.3
+    container_name: esp-stickbee-devel
+    working_dir: /workspace
+    userns_mode: keep-id
+    volumes:
+      - .:/workspace:z
+    stdin_open: true
+    tty: true
+    command: ["bash"]
