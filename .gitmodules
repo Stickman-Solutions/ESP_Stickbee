@@ -1,0 +1,6 @@
+[submodule "Firmware/ESP_Stickbee_Example/boards/esp-idf-hdc1080"]
+	path = Firmware/ESP_Stickbee_Example/boards/esp-idf-hdc1080
+	url = https://github.com/dane-io/esp-idf-hdc1080
+[submodule "Firmware/ESP_Stickbee_Example/boards/esp-idf-opt3001"]
+	path = Firmware/ESP_Stickbee_Example/boards/esp-idf-opt3001
+	url = https://github.com/dane-io/esp-idf-opt3001

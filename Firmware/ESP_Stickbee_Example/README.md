@@ -4,6 +4,8 @@ Open source firmware for ESP32-C6 Zigbee device.
 # Container setup
 These instructions are written assuming a Fedora host using Podman. These instructions can probably be extended to Docker and other hosts, but have not been tested by me. The only prerequisite is allowing unprivileged containers to access /dev to be able to flash the firmware. To do this permanently, do `sudo setsebool -P container_use_devices on`. Make sure you understand the implications of that command before running it.
 
+Also make sure to pull Git submodules for drivers: `git submodule update --init --recursive`
+
 ## Building app (without USB device connected)
 First start the container with `podman-compose run --rm idf`\
 Inside the container, run `idf.py build`\

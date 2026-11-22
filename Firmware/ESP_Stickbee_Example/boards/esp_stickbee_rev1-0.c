@@ -37,7 +37,7 @@ i2c_device_config_t hdc1080_dev_cfg = {
     .dev_addr_length = I2C_ADDR_BIT_LEN_7,
     .device_address = HDC1080_ADDR,
     .scl_speed_hz = 100000,
-    .flags.disable_ack_check = true,
+    .flags.disable_ack_check = false,
 };
 
 
@@ -47,7 +47,7 @@ i2c_device_config_t opt3001_dev_cfg = {
     .dev_addr_length = I2C_ADDR_BIT_LEN_7,
     .device_address = OPT3001_ADDR,
     .scl_speed_hz = 100000,
-    .flags.disable_ack_check = true,
+    .flags.disable_ack_check = false,
 };
 
 
@@ -116,9 +116,6 @@ bool opt3001_read_illuminance(float *illuminance_out) {
         ESP_LOGE(TAG, "Error writing OPT3001 configuration");
         return false;
     }
-
-    // Wait for conversion to finish
-    vTaskDelay(pdMS_TO_TICKS(opt3001_settings.configuration & OPT3001_CONFIG_CONVERSION_TIME_800MS_MASK? 1000 : 200));
 
     if (OPT3001_Read_Lux(&opt3001_settings, illuminance_out) == ESP_OK) {
         ESP_LOGI(TAG, "LUX: %.2f", *illuminance_out);
