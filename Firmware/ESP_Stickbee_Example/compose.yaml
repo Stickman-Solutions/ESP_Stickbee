@@ -1,6 +1,6 @@
-# Run with podman-compose run --rm idf
 services:
-  idf:
+  # Run with podman-compose run --rm idf
+  idf: &idf
     image: docker.io/espressif/idf:v5.5.3
     container_name: esp-stickbee-devel
     working_dir: /workspace
@@ -10,3 +10,16 @@ services:
     stdin_open: true
     tty: true
     command: ["bash"]
+
+  # Use if board is plugged in
+  flash:
+    <<: *idf
+    container_name: esp-stickbee-flash
+    group_add: [keep-groups]
+    volumes:
+      - .:/workspace:z
+      - /dev:/host-dev:ro,dev
+    environment:
+      ESPPORT: /host-dev/ttyACM0
+    # Add bash alias for flashing with esptool.py since idf.py flash won't work with the device mapping in podman
+    command: ["bash", "--rcfile", "/workspace/flash.bashrc", "-i"]

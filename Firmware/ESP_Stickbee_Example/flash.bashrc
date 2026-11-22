@@ -1,0 +1,1 @@
+alias flash='(cd /workspace/build && esptool.py -p "$ESPPORT" --before usb_reset write_flash @flash_args)'
